@@ -1,0 +1,33 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Session {
+  id           String        @id @default(cuid())
+  sessionId    String        @unique
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  subscription Subscription?
+}
+
+model Subscription {
+  id        String             @id @default(cuid())
+  sessionId String             @unique
+  status    SubscriptionStatus @default(INACTIVE)
+  paidAt    DateTime?
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+}
