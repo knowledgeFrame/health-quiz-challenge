@@ -1,14 +1,15 @@
+#!/usr/bin/env python3
 """Start the local Next.js dev server for health-quiz-challenge."""
 
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import IO
 
 
 def start_local_app(
@@ -17,7 +18,7 @@ def start_local_app(
     port: int = 3000,
     host: str = "localhost",
     wait_until_ready: bool = True,
-    timeout: float = 60.0,
+    timeout: float = 120.0,
 ) -> subprocess.Popen[str]:
     """Start `npm run dev` for the Next.js app in `app/`.
 
@@ -31,13 +32,12 @@ def start_local_app(
     env = os.environ.copy()
     env["PORT"] = str(port)
 
+    # Do not capture stdout/stderr into a pipe: Next.js is verbose and can
+    # block once the pipe buffer fills, preventing the server from starting.
     process = subprocess.Popen(
         ["npm", "run", "dev", "--", "-p", str(port), "-H", host],
         cwd=root,
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
     )
 
     if wait_until_ready:
@@ -50,36 +50,24 @@ def _wait_for_server(url: str, process: subprocess.Popen[str], *, timeout: float
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            output = _read_process_output(process)
             raise RuntimeError(
-                f"Dev server exited with code {process.returncode} before becoming ready.\n{output}"
+                f"Dev server exited with code {process.returncode} before becoming ready."
             )
 
         try:
-            with urllib.request.urlopen(url, timeout=1) as response:
+            with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status < 500:
                     return
-        except (urllib.error.URLError, TimeoutError):
+        except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionResetError):
             time.sleep(0.5)
 
-    output = _read_process_output(process)
     process.terminate()
-    raise TimeoutError(f"Dev server did not become ready within {timeout}s.\n{output}")
-
-
-def _read_process_output(process: subprocess.Popen[str]) -> str:
-    stream: IO[str] | None = process.stdout
-    if stream is None:
-        return ""
-    try:
-        return stream.read()
-    except Exception:
-        return ""
+    raise TimeoutError(f"Dev server did not become ready within {timeout}s at {url}")
 
 
 if __name__ == "__main__":
     proc = start_local_app()
-    print(f"Dev server running at http://localhost:3000 (pid={proc.pid})")
+    print(f"Dev server running (pid={proc.pid}). Press Ctrl+C to stop.")
     try:
         proc.wait()
     except KeyboardInterrupt:
