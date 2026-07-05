@@ -7,6 +7,10 @@ import { sessionIdSchema } from "@/lib/assessment-types";
 import { prismaAuthStore } from "@/lib/prisma-auth-store";
 import { prismaAssessmentStore } from "@/lib/prisma-assessment-store";
 
+function routeErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unexpected server error";
+}
+
 type Params = {
   params: Promise<{
     sessionId: string;
@@ -24,19 +28,26 @@ export async function GET(_request: Request, { params }: Params) {
     );
   }
 
-  const cookieStore = await cookies();
-  const user = await getAuthenticatedUser(
-    prismaAuthStore,
-    cookieStore.get(authCookieName)?.value,
-  );
-  const result = await getResult(prismaAssessmentStore, parsed.data, user?.id);
+  try {
+    const cookieStore = await cookies();
+    const user = await getAuthenticatedUser(
+      prismaAuthStore,
+      cookieStore.get(authCookieName)?.value,
+    );
+    const result = await getResult(prismaAssessmentStore, parsed.data, user?.id);
 
-  if (!result) {
+    if (!result) {
+      return NextResponse.json(
+        { error: "Assessment result not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json(result);
+  } catch (error) {
     return NextResponse.json(
-      { error: "Assessment result not found" },
-      { status: 404 },
+      { error: routeErrorMessage(error) },
+      { status: 500 },
     );
   }
-
-  return NextResponse.json(result);
 }

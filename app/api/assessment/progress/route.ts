@@ -10,6 +10,10 @@ import {
 } from "@/lib/assessment-types";
 import { prismaAssessmentStore } from "@/lib/prisma-assessment-store";
 
+function routeErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unexpected server error";
+}
+
 export async function GET(request: NextRequest) {
   const parsed = sessionIdSchema.safeParse(
     request.nextUrl.searchParams.get("sessionId"),
@@ -22,8 +26,15 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const progress = await getProgress(prismaAssessmentStore, parsed.data);
-  return NextResponse.json({ progress });
+  try {
+    const progress = await getProgress(prismaAssessmentStore, parsed.data);
+    return NextResponse.json({ progress });
+  } catch (error) {
+    return NextResponse.json(
+      { error: routeErrorMessage(error) },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PATCH(request: Request) {
@@ -40,6 +51,13 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const progress = await saveProgress(prismaAssessmentStore, parsed.data);
-  return NextResponse.json({ progress });
+  try {
+    const progress = await saveProgress(prismaAssessmentStore, parsed.data);
+    return NextResponse.json({ progress });
+  } catch (error) {
+    return NextResponse.json(
+      { error: routeErrorMessage(error) },
+      { status: 500 },
+    );
+  }
 }
