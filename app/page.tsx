@@ -799,7 +799,7 @@ export default function Home() {
 
         const params = new URLSearchParams(window.location.search);
         const requestedStep = Number(params.get("step"));
-        const isReview = params.get("review") === "1" || params.has("step");
+        const isReview = params.get("review") === "1";
         if (isReview) {
           setReviewMode(true);
         }
@@ -935,12 +935,12 @@ export default function Home() {
     <main className="min-h-screen bg-[#fffdf7] text-[#24140c]">
       <ReferenceHeader
         title={step.ref >= 43 ? "Almost There" : "BetterMe"}
-        progressPercent={progressPercent}
+        progressPercent={step.ref >= 43 ? 100 : progressPercent}
         onBack={stepIndex > 0 ? goBack : undefined}
         onMenu={resetDemo}
       />
 
-      <section className="mx-auto flex min-h-screen max-w-[1180px] items-start justify-center px-5 pb-16 pt-[216px]">
+      <section className="mx-auto flex min-h-screen max-w-[1180px] items-start justify-center px-4 pb-16 pt-[184px] sm:px-5 sm:pt-[216px]">
         <div className="w-full">
           <StepCard
             key={step.ref}
@@ -1038,7 +1038,7 @@ function StepCard({
         {step.subtitle ? (
           <p className="mx-auto mt-4 max-w-[640px] text-center text-[18px] leading-7 text-[#77685d]">{step.subtitle}</p>
         ) : null}
-        <div className="mx-auto mt-[54px] grid w-full max-w-[764px] gap-6">
+        <div className="mx-auto mt-9 grid w-full max-w-[764px] gap-4 sm:mt-[54px] sm:gap-6">
           {step.options.map((option) => {
             const selected = draft === option.value;
             return (
@@ -1057,23 +1057,23 @@ function StepCard({
                 }}
                 className={
                   selected
-                    ? "flex min-h-[124px] items-center justify-between rounded-[18px] border border-[#2f1a10] bg-white px-[35px] text-left shadow-[0_0_0_2px_rgba(47,26,16,0.06)] transition"
-                    : "flex min-h-[124px] items-center justify-between rounded-[18px] border border-[#eee6db] bg-white/55 px-[35px] text-left transition hover:border-[#d8cfc2] hover:bg-white"
+                    ? "flex min-h-[92px] items-center justify-between rounded-[18px] border border-[#2f1a10] bg-white px-5 text-left shadow-[0_0_0_2px_rgba(47,26,16,0.06)] transition sm:min-h-[124px] sm:px-[35px]"
+                    : "flex min-h-[92px] items-center justify-between rounded-[18px] border border-[#eee6db] bg-white/55 px-5 text-left transition hover:border-[#d8cfc2] hover:bg-white sm:min-h-[124px] sm:px-[35px]"
                 }
               >
-                <span className="flex items-center gap-7">
-                  <span className="grid h-[50px] w-[50px] place-items-center rounded-full bg-[#f4f0ea] text-[#7d746b]">
+                <span className="flex min-w-0 items-center gap-4 sm:gap-7">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f4f0ea] text-[#7d746b] sm:h-[50px] sm:w-[50px]">
                     <OptionIcon name={option.icon ?? fallbackIcon(option.value)} />
                   </span>
-                  <span className="text-[28px] font-extrabold leading-tight tracking-normal text-[#24140c]">
+                  <span className="min-w-0 text-[20px] font-extrabold leading-tight tracking-normal text-[#24140c] sm:text-[28px]">
                     {option.label}
                   </span>
                 </span>
                 <span
                   className={
                     selected
-                      ? "grid h-[34px] w-[34px] place-items-center rounded-full border-2 border-[#2f1a10]"
-                      : "h-[34px] w-[34px] rounded-full border border-[#ded7cf]"
+                      ? "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full border-2 border-[#2f1a10] sm:h-[34px] sm:w-[34px]"
+                      : "h-[30px] w-[30px] shrink-0 rounded-full border border-[#ded7cf] sm:h-[34px] sm:w-[34px]"
                   }
                 >
                   {selected ? (
@@ -1260,7 +1260,7 @@ function QuestionFrame({
         ) : null}
         <span>Step {step.ref}</span>
       </div>
-      <h1 className="mx-auto max-w-[760px] text-balance text-center text-[34px] font-black leading-[1.16] tracking-[-0.01em] text-[#24140c] sm:text-[48px]">
+      <h1 className="mx-auto max-w-[760px] text-balance text-center text-[32px] font-black leading-[1.16] tracking-[-0.01em] text-[#24140c] sm:text-[48px]">
         {step.title}
       </h1>
       {children}
@@ -1281,23 +1281,23 @@ function ReferenceHeader({
 }) {
   return (
     <header className="fixed inset-x-0 top-0 z-20 border-b border-[#ece6dc] bg-[#fffdf7]">
-      <div className="grid h-[120px] grid-cols-[1fr_auto_1fr] items-center px-[82px]">
-        <div className="flex items-center gap-[42px]">
+      <div className="grid h-[104px] grid-cols-[auto_1fr_auto] items-center px-4 sm:h-[120px] sm:grid-cols-[1fr_auto_1fr] sm:px-[82px]">
+        <div className="flex items-center gap-4 sm:gap-[42px]">
           <CircleButton label="Back" onClick={onBack}>
             <span className="text-[42px] leading-none">‹</span>
           </CircleButton>
-          <div className="text-[40px] font-black tracking-[-0.055em] text-[#21130c]">
+          <div className="text-[28px] font-black tracking-[-0.055em] text-[#21130c] sm:text-[40px]">
             BetterMe
           </div>
         </div>
-        <div className="text-[25px] font-extrabold text-[#24140c]">{title}</div>
+        <div className="hidden text-[25px] font-extrabold text-[#24140c] sm:block">{title}</div>
         <div className="flex justify-end">
           <CircleButton label="Menu" onClick={onMenu}>
             <span className="mt-[-2px] text-[36px] leading-none">≡</span>
           </CircleButton>
         </div>
       </div>
-      <div className="grid h-[7px] grid-cols-5 gap-[6px] bg-[#eee9df]">
+      <div className="grid h-[7px] grid-cols-5 gap-1 bg-[#eee9df] sm:gap-[6px]">
         {Array.from({ length: 5 }, (_, index) => {
           const segmentProgress = Math.max(0, Math.min(100, progressPercent - index * 20) * 5);
           return (
@@ -1329,7 +1329,7 @@ function CircleButton({
       aria-label={label}
       disabled={!onClick}
       onClick={onClick}
-      className="grid h-[66px] w-[66px] place-items-center rounded-full border border-[#e8e0d6] bg-[#fffdf7] text-[#24140c] transition hover:border-[#2d180f] disabled:opacity-40"
+      className="grid h-[54px] w-[54px] place-items-center rounded-full border border-[#e8e0d6] bg-[#fffdf7] text-[#24140c] transition hover:border-[#2d180f] disabled:opacity-40 sm:h-[66px] sm:w-[66px]"
     >
       {children}
     </button>
