@@ -13,6 +13,7 @@ model Session {
   sessionId    String        @unique
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+  assessment   Assessment?
   subscription Subscription?
 }
 
@@ -27,7 +28,61 @@ model Subscription {
   session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
 }
 
+model Assessment {
+  id             String         @id @default(cuid())
+  sessionId      String         @unique
+  gender         Gender?
+  goal           Goal?
+  age            Int?
+  heightCm       Float?
+  weightKg       Float?
+  targetWeightKg Float?
+  activityLevel  ActivityLevel?
+  currentStep    Int            @default(0)
+  completed      Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  result         AssessmentResult?
+
+  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+}
+
+model AssessmentResult {
+  id                  String     @id @default(cuid())
+  assessmentId        String     @unique
+  bmi                 Float
+  bmiCategory         String
+  recommendedCalories Int
+  targetDate          DateTime
+  summary             String
+  predictionCurve     Json
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+}
+
 enum SubscriptionStatus {
   INACTIVE
   ACTIVE
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  OTHER
+}
+
+enum Goal {
+  LOSE_WEIGHT
+  MAINTAIN
+  BUILD_MUSCLE
+}
+
+enum ActivityLevel {
+  SEDENTARY
+  LIGHT
+  MODERATE
+  ACTIVE
+  VERY_ACTIVE
 }

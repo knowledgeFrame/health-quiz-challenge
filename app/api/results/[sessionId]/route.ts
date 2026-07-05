@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-import { ensureSession } from "@/lib/session";
+import { getResult } from "@/lib/assessment-service";
+import { sessionIdSchema } from "@/lib/assessment-types";
+import { prismaAssessmentStore } from "@/lib/prisma-assessment-store";
 
 type Params = {
   params: Promise<{
@@ -11,54 +12,23 @@ type Params = {
 
 export async function GET(_request: Request, { params }: Params) {
   const { sessionId } = await params;
+  const parsed = sessionIdSchema.safeParse(sessionId);
 
-  if (!sessionId) {
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "sessionId is required" },
+      { error: "Valid sessionId is required" },
       { status: 400 },
     );
   }
 
-  await ensureSession(sessionId);
+  const result = await getResult(prismaAssessmentStore, parsed.data);
 
-  const subscription = await prisma.subscription.findUnique({
-    where: { sessionId },
-  });
-
-  const isActive = subscription?.status === "ACTIVE";
-  const publicResult = {
-    bmi: 24.2,
-    category: "normal",
-    summary: "Your initial health profile is ready.",
-  };
-
-  if (!isActive) {
-    return NextResponse.json({
-      sessionId,
-      subscriptionStatus: "inactive",
-      paywall: {
-        required: true,
-        message: "Subscribe to unlock your full prediction curve.",
-      },
-      result: publicResult,
-    });
+  if (!result) {
+    return NextResponse.json(
+      { error: "Assessment result not found" },
+      { status: 404 },
+    );
   }
 
-  return NextResponse.json({
-    sessionId,
-    subscriptionStatus: "active",
-    paywall: {
-      required: false,
-    },
-    result: {
-      ...publicResult,
-      recommendedCalories: 1840,
-      targetDate: "2026-09-16",
-      predictionCurve: [
-        { week: 1, weightKg: 72.4 },
-        { week: 2, weightKg: 71.8 },
-        { week: 3, weightKg: 71.2 },
-      ],
-    },
-  });
+  return NextResponse.json(result);
 }

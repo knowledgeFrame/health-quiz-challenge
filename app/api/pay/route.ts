@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { ensureSession } from "@/lib/session";
+import { activateSubscription } from "@/lib/assessment-service";
+import { sessionIdSchema } from "@/lib/assessment-types";
+import { prismaAssessmentStore } from "@/lib/prisma-assessment-store";
 
 const paySchema = z.object({
-  sessionId: z.string().trim().min(1, "sessionId is required"),
+  sessionId: sessionIdSchema,
 });
 
 export async function POST(request: Request) {
@@ -20,25 +21,13 @@ export async function POST(request: Request) {
   }
 
   const { sessionId } = parsed.data;
-  await ensureSession(sessionId);
-
-  const subscription = await prisma.subscription.upsert({
-    where: { sessionId },
-    update: {
-      status: "ACTIVE",
-      paidAt: new Date(),
-    },
-    create: {
-      sessionId,
-      status: "ACTIVE",
-      paidAt: new Date(),
-    },
-  });
+  const subscription = await activateSubscription(
+    prismaAssessmentStore,
+    sessionId,
+  );
 
   return NextResponse.json({
     ok: true,
-    sessionId,
-    subscriptionStatus: subscription.status.toLowerCase(),
-    paidAt: subscription.paidAt?.toISOString(),
+    ...subscription,
   });
 }
