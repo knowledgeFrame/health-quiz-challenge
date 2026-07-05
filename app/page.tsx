@@ -52,6 +52,7 @@ type StepOption = {
   value: string;
   hint?: string;
   asset?: VisualAsset;
+  icon?: "trophy" | "arm" | "smile" | "clock" | "check" | "heart" | "food";
 };
 
 type VisualAsset =
@@ -614,11 +615,11 @@ const steps: Step[] = [
   {
     ref: 46,
     kind: "single",
-    title: "How confident are you in reaching your goal by October 18?",
+    title: "How confident are you in reaching 60 kg by October 18?",
     options: [
-      { label: "Very confident", value: "high" },
-      { label: "Somewhat confident", value: "medium" },
-      { label: "Not sure yet", value: "low" },
+      { label: "I believe I can do it!", value: "high", icon: "trophy" },
+      { label: "I'm uncertain, but willing to try!", value: "medium", icon: "arm" },
+      { label: "I'm still really unsure", value: "low", icon: "smile" },
     ],
   },
   {
@@ -723,6 +724,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [reviewMode, setReviewMode] = useState(false);
 
   const step = steps[stepIndex];
   const progressPercent = Math.round(((stepIndex + 1) / steps.length) * 100);
@@ -793,6 +795,18 @@ export default function Home() {
 
         if (progress.completed) {
           await loadResult(nextSessionId).catch(() => undefined);
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const requestedStep = Number(params.get("step"));
+        const isReview = params.get("review") === "1" || params.has("step");
+        if (isReview) {
+          setReviewMode(true);
+        }
+        if (Number.isInteger(requestedStep) && requestedStep >= 1) {
+          const targetIndex = Math.min(requestedStep, steps.length) - 1;
+          setStepIndex(targetIndex);
+          window.localStorage.setItem(localStepKey, String(targetIndex));
         }
       } catch (caught) {
         setError(errorMessage(caught));
@@ -918,33 +932,16 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-[#fbf7ef] text-[#201711]">
-      <header className="fixed inset-x-0 top-0 z-10 border-b border-[#eee3d5] bg-[#fbf7ef]/95 px-5 py-4 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
-          <div className="font-serif text-lg font-bold">BetterMe</div>
-          <div className="hidden min-w-56 items-center gap-3 sm:flex">
-            <div className="h-1.5 flex-1 rounded-full bg-[#e8ddcd]">
-              <div
-                className="h-full rounded-full bg-[#2a1a13] transition-all"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-            <span className="w-14 text-right text-xs font-semibold text-[#7a6a5d]">
-              {progressPercent}%
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={resetDemo}
-            className="rounded-full border border-[#ded1c2] px-3 py-1.5 text-xs font-semibold text-[#5d4b3f] transition hover:border-[#2a1a13]"
-          >
-            Restart
-          </button>
-        </div>
-      </header>
+    <main className="min-h-screen bg-[#fffdf7] text-[#24140c]">
+      <ReferenceHeader
+        title={step.ref >= 43 ? "Almost There" : "BetterMe"}
+        progressPercent={progressPercent}
+        onBack={stepIndex > 0 ? goBack : undefined}
+        onMenu={resetDemo}
+      />
 
-      <section className="mx-auto flex min-h-screen max-w-6xl items-center px-5 pb-12 pt-24">
-        <div className="grid w-full items-center gap-8 lg:grid-cols-[1fr_0.88fr]">
+      <section className="mx-auto flex min-h-screen max-w-[1180px] items-start justify-center px-5 pb-16 pt-[216px]">
+        <div className="w-full">
           <StepCard
             key={step.ref}
             step={step}
@@ -953,18 +950,25 @@ export default function Home() {
             answers={answers}
             saving={saving}
             canSubmit={canSubmit}
+            reviewMode={reviewMode}
             onNext={goNext}
             onBack={stepIndex > 0 ? goBack : undefined}
             onPay={pay}
           />
-          <ReferenceVisual asset={visualForStep(step)} step={step} result={result} />
         </div>
       </section>
 
-      <footer className="fixed bottom-0 left-0 right-0 bg-[#fbf7ef]/90 px-5 py-3 text-center text-[11px] font-medium text-[#8a7b70] backdrop-blur">
-        Reference page {step.ref} of {steps.length} · session{" "}
-        <span className="font-mono">{sessionId.slice(0, 8)}</span>
-      </footer>
+      {reviewMode ? (
+        <ReviewDock
+          stepIndex={stepIndex}
+          setStepIndex={(nextIndex) => {
+            setStepIndex(nextIndex);
+            window.localStorage.setItem(localStepKey, String(nextIndex));
+            window.history.replaceState(null, "", `?review=1&step=${nextIndex + 1}`);
+          }}
+          sessionId={sessionId}
+        />
+      ) : null}
 
       {error ? (
         <div className="fixed bottom-12 left-1/2 z-20 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-xl border border-[#c05f4d] bg-white px-4 py-3 text-sm font-semibold text-[#9d2f2f] shadow-lg">
@@ -982,6 +986,7 @@ function StepCard({
   answers,
   saving,
   canSubmit,
+  reviewMode,
   onNext,
   onBack,
   onPay,
@@ -992,6 +997,7 @@ function StepCard({
   answers: Record<number, string | string[]>;
   saving: boolean;
   canSubmit: boolean;
+  reviewMode: boolean;
   onNext: (value?: string | string[], patch?: FormState) => Promise<void>;
   onBack?: () => void;
   onPay: () => Promise<void>;
@@ -1030,37 +1036,54 @@ function StepCard({
     return (
       <QuestionFrame step={step} onBack={onBack}>
         {step.subtitle ? (
-          <p className="mt-3 text-sm leading-6 text-[#77685d]">{step.subtitle}</p>
+          <p className="mx-auto mt-4 max-w-[640px] text-center text-[18px] leading-7 text-[#77685d]">{step.subtitle}</p>
         ) : null}
-        <div className="mt-8 grid gap-3">
+        <div className="mx-auto mt-[54px] grid w-full max-w-[764px] gap-6">
           {step.options.map((option) => {
             const selected = draft === option.value;
             return (
               <button
                 type="button"
                 key={option.value}
-                onClick={() => setDraft(option.value)}
+                onClick={() => {
+                  setDraft(option.value);
+                  if (reviewMode) return;
+
+                  const patch =
+                    step.field && option.value
+                      ? ({ [step.field]: parseField(step.field, option.value) } as FormState)
+                      : {};
+                  return onNext(option.value, patch);
+                }}
                 className={
                   selected
-                    ? "flex min-h-14 items-center justify-between rounded-full border border-[#2a1a13] bg-[#2a1a13] px-5 text-left text-sm font-bold text-white shadow-sm"
-                    : "flex min-h-14 items-center justify-between rounded-full border border-[#eadfce] bg-white px-5 text-left text-sm font-semibold text-[#2a1a13] transition hover:border-[#2a1a13]"
+                    ? "flex min-h-[124px] items-center justify-between rounded-[18px] border border-[#2f1a10] bg-white px-[35px] text-left shadow-[0_0_0_2px_rgba(47,26,16,0.06)] transition"
+                    : "flex min-h-[124px] items-center justify-between rounded-[18px] border border-[#eee6db] bg-white/55 px-[35px] text-left transition hover:border-[#d8cfc2] hover:bg-white"
                 }
               >
-                <span>{option.label}</span>
-                <span className={selected ? "text-white" : "text-[#b2a496]"}>→</span>
+                <span className="flex items-center gap-7">
+                  <span className="grid h-[50px] w-[50px] place-items-center rounded-full bg-[#f4f0ea] text-[#7d746b]">
+                    <OptionIcon name={option.icon ?? fallbackIcon(option.value)} />
+                  </span>
+                  <span className="text-[28px] font-extrabold leading-tight tracking-normal text-[#24140c]">
+                    {option.label}
+                  </span>
+                </span>
+                <span
+                  className={
+                    selected
+                      ? "grid h-[34px] w-[34px] place-items-center rounded-full border-2 border-[#2f1a10]"
+                      : "h-[34px] w-[34px] rounded-full border border-[#ded7cf]"
+                  }
+                >
+                  {selected ? (
+                    <span className="h-[14px] w-[14px] rounded-full bg-[#2f1a10]" />
+                  ) : null}
+                </span>
               </button>
             );
           })}
         </div>
-        <PrimaryButton
-          disabled={!draft || saving}
-          label={saving ? "Saving..." : "Continue"}
-          onClick={() => {
-            const patch =
-              step.field && draft ? ({ [step.field]: parseField(step.field, draft) } as FormState) : {};
-            return onNext(draft, patch);
-          }}
-        />
       </QuestionFrame>
     );
   }
@@ -1224,8 +1247,8 @@ function QuestionFrame({
   onBack?: () => void;
 }) {
   return (
-    <div className="mx-auto w-full max-w-xl">
-      <div className="mb-8 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#9a8b7e]">
+    <div className="mx-auto w-full max-w-[920px]">
+      <div className="sr-only mb-8 items-center gap-3 text-xs font-semibold uppercase tracking-[0.18em] text-[#9a8b7e]">
         {onBack ? (
           <button
             type="button"
@@ -1237,12 +1260,167 @@ function QuestionFrame({
         ) : null}
         <span>Step {step.ref}</span>
       </div>
-      <h1 className="max-w-2xl text-balance text-center text-3xl font-bold leading-tight tracking-normal text-[#241912] sm:text-4xl lg:text-left">
+      <h1 className="mx-auto max-w-[760px] text-balance text-center text-[34px] font-black leading-[1.16] tracking-[-0.01em] text-[#24140c] sm:text-[48px]">
         {step.title}
       </h1>
       {children}
     </div>
   );
+}
+
+function ReferenceHeader({
+  title,
+  progressPercent,
+  onBack,
+  onMenu,
+}: {
+  title: string;
+  progressPercent: number;
+  onBack?: () => void;
+  onMenu: () => void;
+}) {
+  return (
+    <header className="fixed inset-x-0 top-0 z-20 border-b border-[#ece6dc] bg-[#fffdf7]">
+      <div className="grid h-[120px] grid-cols-[1fr_auto_1fr] items-center px-[82px]">
+        <div className="flex items-center gap-[42px]">
+          <CircleButton label="Back" onClick={onBack}>
+            <span className="text-[42px] leading-none">‹</span>
+          </CircleButton>
+          <div className="text-[40px] font-black tracking-[-0.055em] text-[#21130c]">
+            BetterMe
+          </div>
+        </div>
+        <div className="text-[25px] font-extrabold text-[#24140c]">{title}</div>
+        <div className="flex justify-end">
+          <CircleButton label="Menu" onClick={onMenu}>
+            <span className="mt-[-2px] text-[36px] leading-none">≡</span>
+          </CircleButton>
+        </div>
+      </div>
+      <div className="grid h-[7px] grid-cols-5 gap-[6px] bg-[#eee9df]">
+        {Array.from({ length: 5 }, (_, index) => {
+          const segmentProgress = Math.max(0, Math.min(100, progressPercent - index * 20) * 5);
+          return (
+            <div key={index} className="h-full rounded-full bg-transparent">
+              <div
+                className="h-full rounded-full bg-[#2d180f]"
+                style={{ width: `${Math.min(100, segmentProgress)}%` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+    </header>
+  );
+}
+
+function CircleButton({
+  label,
+  onClick,
+  children,
+}: {
+  label: string;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      disabled={!onClick}
+      onClick={onClick}
+      className="grid h-[66px] w-[66px] place-items-center rounded-full border border-[#e8e0d6] bg-[#fffdf7] text-[#24140c] transition hover:border-[#2d180f] disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+function ReviewDock({
+  stepIndex,
+  setStepIndex,
+  sessionId,
+}: {
+  stepIndex: number;
+  setStepIndex: (value: number) => void;
+  sessionId: string;
+}) {
+  return (
+    <div className="fixed bottom-4 left-1/2 z-30 flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 items-center justify-between gap-3 rounded-full border border-[#e8e0d6] bg-white/95 px-4 py-3 text-sm font-bold text-[#24140c] shadow-lg backdrop-blur">
+      <button
+        type="button"
+        onClick={() => setStepIndex(Math.max(0, stepIndex - 1))}
+        className="rounded-full bg-[#f4f0ea] px-4 py-2"
+      >
+        Prev
+      </button>
+      <label className="flex items-center gap-2">
+        Step
+        <input
+          value={stepIndex + 1}
+          onChange={(event) => {
+            const next = Number(event.target.value);
+            if (Number.isInteger(next)) {
+              setStepIndex(Math.max(0, Math.min(steps.length - 1, next - 1)));
+            }
+          }}
+          className="h-9 w-14 rounded-full border border-[#e8e0d6] text-center"
+        />
+        / {steps.length}
+      </label>
+      <button
+        type="button"
+        onClick={() => setStepIndex(Math.min(steps.length - 1, stepIndex + 1))}
+        className="rounded-full bg-[#24140c] px-4 py-2 text-white"
+      >
+        Next
+      </button>
+      <span className="hidden font-mono text-xs text-[#8a7b70] sm:inline">
+        {sessionId.slice(0, 8)}
+      </span>
+    </div>
+  );
+}
+
+function OptionIcon({ name }: { name: NonNullable<StepOption["icon"]> }) {
+  if (name === "trophy") {
+    return (
+      <svg viewBox="0 0 32 32" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.2">
+        <path d="M10 6h12v6c0 5-2.5 8-6 8s-6-3-6-8V6Z" />
+        <path d="M10 9H5c0 4 2 7 5 7M22 9h5c0 4-2 7-5 7M16 20v5M11 26h10" />
+      </svg>
+    );
+  }
+  if (name === "arm") {
+    return (
+      <svg viewBox="0 0 32 32" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.2">
+        <path d="M8 21c4-8 7-12 13-12 2 0 3 1 3 3 0 3-3 4-6 4h-2" />
+        <path d="M7 21c3 4 8 5 14 4 3-.5 5-2 5-5 0-2-1-4-4-4" />
+        <path d="M13 14c-1-2-1-4 1-6" />
+      </svg>
+    );
+  }
+  if (name === "smile") {
+    return (
+      <svg viewBox="0 0 32 32" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.2">
+        <circle cx="16" cy="16" r="11" />
+        <path d="M12 13h.01M20 13h.01M12 20h8" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 32 32" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.2">
+      <circle cx="16" cy="16" r="11" />
+      <path d="m10 16 4 4 8-9" />
+    </svg>
+  );
+}
+
+function fallbackIcon(value: string): NonNullable<StepOption["icon"]> {
+  if (value.includes("high") || value.includes("yes")) return "check";
+  if (value.includes("food") || value.includes("meal")) return "food";
+  if (value.includes("low") || value.includes("no")) return "smile";
+  return "heart";
 }
 
 function PrimaryButton({
@@ -1296,105 +1474,6 @@ function NumberInput({
         <span className="text-lg font-bold text-[#6b5c50]">{suffix}</span>
       </span>
     </label>
-  );
-}
-
-function ReferenceVisual({
-  asset,
-  step,
-  result,
-}: {
-  asset: VisualAsset;
-  step: Step;
-  result: ResultState | null;
-}) {
-  return (
-    <div className="hidden lg:block">
-      <div className="relative mx-auto aspect-[4/5] max-h-[620px] max-w-md overflow-hidden rounded-[2rem] border border-[#ecdfcf] bg-[#fffdf8] p-8 shadow-sm">
-        <Illustration asset={asset} />
-        <div className="absolute bottom-6 left-6 right-6 rounded-3xl bg-white/88 p-5 shadow-sm backdrop-blur">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#aa7b53]">
-            Reference screen {step.ref}
-          </p>
-          <p className="mt-2 text-lg font-bold leading-snug text-[#261a13]">
-            {result?.subscriptionStatus === "active"
-              ? "Full plan unlocked"
-              : step.kind === "paywall"
-                ? "Preview locked"
-                : "Personal plan builder"}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Illustration({ asset }: { asset: VisualAsset }) {
-  if (asset === "chart") {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="w-full rounded-3xl bg-[#f5ead9] p-6">
-          <div className="mb-6 h-5 w-32 rounded bg-[#2a1a13]" />
-          <div className="flex h-48 items-end gap-3">
-            {[72, 58, 66, 42, 54, 30].map((height) => (
-              <div
-                key={height}
-                className="flex-1 rounded-t-2xl bg-[#8fb88f]"
-                style={{ height: `${height}%` }}
-              />
-            ))}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (asset === "food" || asset === "salad") {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="relative h-64 w-64 rounded-full bg-[#2f2118] p-7 shadow-xl">
-          <div className="h-full w-full rounded-full bg-[#f8f0df] p-6">
-            <div className="grid h-full grid-cols-2 gap-3">
-              <span className="rounded-full bg-[#8fb88f]" />
-              <span className="rounded-full bg-[#e6b75c]" />
-              <span className="rounded-full bg-[#d87b58]" />
-              <span className="rounded-full bg-[#9ab3cf]" />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (asset === "discount" || asset === "checkout" || asset === "phone") {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <div className="w-64 rounded-[2rem] bg-[#2a1a13] p-5 text-white shadow-xl">
-          <div className="rounded-2xl bg-white p-5 text-[#2a1a13]">
-            <p className="text-center text-5xl font-black">
-              {asset === "discount" ? "50%" : "✓"}
-            </p>
-            <p className="mt-3 text-center text-sm font-bold">
-              {asset === "checkout" ? "Payment confirmed" : "Plan unlock"}
-            </p>
-          </div>
-          <div className="mt-5 h-10 rounded-full bg-[#f0c36a]" />
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-full items-end justify-center">
-      <div className="relative h-[82%] w-64">
-        <div className="absolute left-1/2 top-6 h-20 w-20 -translate-x-1/2 rounded-full bg-[#7b4d3d]" />
-        <div className="absolute left-1/2 top-24 h-48 w-28 -translate-x-1/2 rounded-t-[4rem] rounded-b-[2rem] bg-[#2a1a13]" />
-        <div className="absolute left-12 top-32 h-44 w-8 -rotate-12 rounded-full bg-[#b97c61]" />
-        <div className="absolute right-12 top-32 h-44 w-8 rotate-12 rounded-full bg-[#b97c61]" />
-        <div className="absolute bottom-4 left-20 h-40 w-10 rounded-full bg-[#b97c61]" />
-        <div className="absolute bottom-4 right-20 h-40 w-10 rounded-full bg-[#b97c61]" />
-      </div>
-    </div>
   );
 }
 
@@ -1492,16 +1571,6 @@ function fieldLabel(field: keyof FormState) {
     activityLevel: "Activity",
   };
   return labels[field];
-}
-
-function visualForStep(step: Step): VisualAsset {
-  if ("asset" in step && step.asset) return step.asset;
-  if (step.kind === "paywall" || step.kind === "checkout") return "checkout";
-  if (step.kind === "result-preview" || step.kind === "body-summary") return "chart";
-  if (step.title.toLowerCase().includes("meal") || step.title.toLowerCase().includes("food")) {
-    return "food";
-  }
-  return "woman";
 }
 
 function errorMessage(error: unknown) {
