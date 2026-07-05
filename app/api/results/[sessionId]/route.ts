@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
+import { authCookieName, getAuthenticatedUser } from "@/lib/auth-service";
 import { getResult } from "@/lib/assessment-service";
 import { sessionIdSchema } from "@/lib/assessment-types";
+import { prismaAuthStore } from "@/lib/prisma-auth-store";
 import { prismaAssessmentStore } from "@/lib/prisma-assessment-store";
 
 type Params = {
@@ -21,7 +24,12 @@ export async function GET(_request: Request, { params }: Params) {
     );
   }
 
-  const result = await getResult(prismaAssessmentStore, parsed.data);
+  const cookieStore = await cookies();
+  const user = await getAuthenticatedUser(
+    prismaAuthStore,
+    cookieStore.get(authCookieName)?.value,
+  );
+  const result = await getResult(prismaAssessmentStore, parsed.data, user?.id);
 
   if (!result) {
     return NextResponse.json(

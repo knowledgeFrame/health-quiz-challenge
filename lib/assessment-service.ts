@@ -36,7 +36,7 @@ export interface AssessmentStore {
     result: AssessmentResult,
   ): Promise<SavedAssessmentResult>;
   getResult(sessionId: string): Promise<SavedAssessmentResult | null>;
-  isSubscribed(sessionId: string): Promise<boolean>;
+  isSubscribed(sessionId: string, userId?: string): Promise<boolean>;
   activateSubscription(sessionId: string): Promise<{
     sessionId: string;
     subscriptionStatus: "active";
@@ -75,12 +75,13 @@ export async function submitAssessment(
 export async function getResult(
   store: AssessmentStore,
   sessionId: string,
+  userId?: string,
 ): Promise<ResultResponse | null> {
   await store.ensureSession(sessionId);
   const result = await store.getResult(sessionId);
   if (!result) return null;
 
-  const isSubscribed = await store.isSubscribed(sessionId);
+  const isSubscribed = await store.isSubscribed(sessionId, userId);
   const publicResult = {
     bmi: result.bmi,
     bmiCategory: result.bmiCategory,

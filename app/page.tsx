@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -46,6 +47,15 @@ type ResultState = {
     }>;
   };
 };
+
+type AuthUserState = {
+  id: string;
+  email: string;
+  subscriptionStatus: "active" | "inactive";
+};
+
+type TransitionDirection = "forward" | "back";
+type TransitionState = "idle" | "leaving";
 
 type StepOption = {
   label: string;
@@ -724,7 +734,12 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [authUser, setAuthUser] = useState<AuthUserState | null>(null);
   const [reviewMode, setReviewMode] = useState(false);
+  const [transitionDirection, setTransitionDirection] =
+    useState<TransitionDirection>("forward");
+  const [transitionState, setTransitionState] = useState<TransitionState>("idle");
+  const transitionTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const step = steps[stepIndex];
   const progressPercent = Math.round(((stepIndex + 1) / steps.length) * 100);
@@ -761,6 +776,12 @@ export default function Home() {
         }
 
         setSessionId(nextSessionId);
+
+        const authResponse = await fetch("/api/auth/me");
+        if (authResponse.ok) {
+          const authData = await authResponse.json();
+          setAuthUser(authData.user ?? null);
+        }
 
         const progressResponse = await fetch(
           `/api/assessment/progress?sessionId=${encodeURIComponent(nextSessionId)}`,
@@ -817,6 +838,40 @@ export default function Home() {
 
     boot();
   }, [createSession, loadResult]);
+
+  useEffect(() => {
+    return () => {
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  const moveToStep = useCallback(
+    (targetIndex: number, direction: TransitionDirection) => {
+      const nextIndex = Math.max(0, Math.min(steps.length - 1, targetIndex));
+
+      if (transitionTimeoutRef.current) {
+        clearTimeout(transitionTimeoutRef.current);
+      }
+
+      setTransitionDirection(direction);
+
+      if (nextIndex === stepIndex) {
+        window.localStorage.setItem(localStepKey, String(nextIndex));
+        setTransitionState("idle");
+        return;
+      }
+
+      setTransitionState("leaving");
+      transitionTimeoutRef.current = setTimeout(() => {
+        setStepIndex(nextIndex);
+        window.localStorage.setItem(localStepKey, String(nextIndex));
+        setTransitionState("idle");
+      }, 170);
+    },
+    [stepIndex],
+  );
 
   async function persistFormPatch(patch: FormState, backendStep = 0) {
     if (!Object.keys(patch).length) return;
@@ -881,8 +936,7 @@ export default function Home() {
       }
 
       const nextIndex = Math.min(stepIndex + 1, steps.length - 1);
-      setStepIndex(nextIndex);
-      window.localStorage.setItem(localStepKey, String(nextIndex));
+      moveToStep(nextIndex, "forward");
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -905,8 +959,47 @@ export default function Home() {
         throw new Error(data.error || "Could not activate subscription");
       }
       await loadResult(sessionId);
-      setStepIndex(steps.length - 1);
-      window.localStorage.setItem(localStepKey, String(steps.length - 1));
+      moveToStep(steps.length - 1, "forward");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function login(email: string, password: string) {
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, sessionId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Could not log in");
+      }
+      setAuthUser(data.user);
+      if (result) {
+        await loadResult(sessionId);
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function logoutUser() {
+    setSaving(true);
+    setError("");
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+      setAuthUser(null);
+      if (result) {
+        await loadResult(sessionId);
+      }
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -916,8 +1009,7 @@ export default function Home() {
 
   function goBack() {
     const previous = Math.max(0, stepIndex - 1);
-    setStepIndex(previous);
-    window.localStorage.setItem(localStepKey, String(previous));
+    moveToStep(previous, "back");
   }
 
   function resetDemo() {
@@ -941,7 +1033,14 @@ export default function Home() {
       />
 
       <section className="mx-auto flex min-h-screen max-w-[1180px] items-start justify-center px-4 pb-16 pt-[184px] sm:px-5 sm:pt-[216px]">
-        <div className="w-full">
+        <div
+          className={[
+            "w-full",
+            "quiz-step-transition",
+            transitionState === "leaving" ? "quiz-step-leave" : "quiz-step-enter",
+            transitionDirection === "back" ? "quiz-step-back" : "quiz-step-forward",
+          ].join(" ")}
+        >
           <StepCard
             key={step.ref}
             step={step}
@@ -951,9 +1050,12 @@ export default function Home() {
             saving={saving}
             canSubmit={canSubmit}
             reviewMode={reviewMode}
+            authUser={authUser}
             onNext={goNext}
             onBack={stepIndex > 0 ? goBack : undefined}
             onPay={pay}
+            onLogin={login}
+            onLogout={logoutUser}
           />
         </div>
       </section>
@@ -962,8 +1064,7 @@ export default function Home() {
         <ReviewDock
           stepIndex={stepIndex}
           setStepIndex={(nextIndex) => {
-            setStepIndex(nextIndex);
-            window.localStorage.setItem(localStepKey, String(nextIndex));
+            moveToStep(nextIndex, nextIndex < stepIndex ? "back" : "forward");
             window.history.replaceState(null, "", `?review=1&step=${nextIndex + 1}`);
           }}
           sessionId={sessionId}
@@ -987,9 +1088,12 @@ function StepCard({
   saving,
   canSubmit,
   reviewMode,
+  authUser,
   onNext,
   onBack,
   onPay,
+  onLogin,
+  onLogout,
 }: {
   step: Step;
   form: FormState;
@@ -998,9 +1102,12 @@ function StepCard({
   saving: boolean;
   canSubmit: boolean;
   reviewMode: boolean;
+  authUser: AuthUserState | null;
   onNext: (value?: string | string[], patch?: FormState) => Promise<void>;
   onBack?: () => void;
   onPay: () => Promise<void>;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onLogout: () => Promise<void>;
 }) {
   const initialAnswer = answers[step.ref];
   const initialDraft =
@@ -1015,6 +1122,7 @@ function StepCard({
   const [multi, setMulti] = useState<string[]>(
     Array.isArray(initialAnswer) ? initialAnswer : [],
   );
+  const [choicePending, setChoicePending] = useState(false);
 
   if (step.kind === "hero" || step.kind === "insight" || step.kind === "loading") {
     return (
@@ -1045,24 +1153,35 @@ function StepCard({
               <button
                 type="button"
                 key={option.value}
-                onClick={() => {
+                disabled={saving || choicePending}
+                onClick={async () => {
+                  if (saving || choicePending) return;
                   setDraft(option.value);
-                  if (reviewMode) return;
+                  setChoicePending(true);
+                  await wait(230);
+                  if (reviewMode) {
+                    setChoicePending(false);
+                    return;
+                  }
 
                   const patch =
                     step.field && option.value
                       ? ({ [step.field]: parseField(step.field, option.value) } as FormState)
                       : {};
-                  return onNext(option.value, patch);
+                  try {
+                    await onNext(option.value, patch);
+                  } finally {
+                    setChoicePending(false);
+                  }
                 }}
                 className={
                   selected
-                    ? "flex min-h-[92px] items-center justify-between rounded-[18px] border border-[#2f1a10] bg-white px-5 text-left shadow-[0_0_0_2px_rgba(47,26,16,0.06)] transition sm:min-h-[124px] sm:px-[35px]"
-                    : "flex min-h-[92px] items-center justify-between rounded-[18px] border border-[#eee6db] bg-white/55 px-5 text-left transition hover:border-[#d8cfc2] hover:bg-white sm:min-h-[124px] sm:px-[35px]"
+                    ? "quiz-option quiz-option-selected flex min-h-[92px] items-center justify-between rounded-[18px] border border-[#2f1a10] bg-white px-5 text-left shadow-[0_16px_44px_rgba(47,26,16,0.10),0_0_0_2px_rgba(47,26,16,0.06)] transition sm:min-h-[124px] sm:px-[35px]"
+                    : "quiz-option flex min-h-[92px] items-center justify-between rounded-[18px] border border-[#eee6db] bg-white/55 px-5 text-left transition hover:border-[#d8cfc2] hover:bg-white sm:min-h-[124px] sm:px-[35px]"
                 }
               >
                 <span className="flex min-w-0 items-center gap-4 sm:gap-7">
-                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f4f0ea] text-[#7d746b] sm:h-[50px] sm:w-[50px]">
+                  <span className="quiz-option-icon grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#f4f0ea] text-[#7d746b] sm:h-[50px] sm:w-[50px]">
                     <OptionIcon name={option.icon ?? fallbackIcon(option.value)} />
                   </span>
                   <span className="min-w-0 text-[20px] font-extrabold leading-tight tracking-normal text-[#24140c] sm:text-[28px]">
@@ -1072,12 +1191,12 @@ function StepCard({
                 <span
                   className={
                     selected
-                      ? "grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full border-2 border-[#2f1a10] sm:h-[34px] sm:w-[34px]"
-                      : "h-[30px] w-[30px] shrink-0 rounded-full border border-[#ded7cf] sm:h-[34px] sm:w-[34px]"
+                      ? "quiz-radio quiz-radio-selected grid h-[30px] w-[30px] shrink-0 place-items-center rounded-full border-2 border-[#2f1a10] sm:h-[34px] sm:w-[34px]"
+                      : "quiz-radio h-[30px] w-[30px] shrink-0 rounded-full border border-[#ded7cf] sm:h-[34px] sm:w-[34px]"
                   }
                 >
                   {selected ? (
-                    <span className="h-[14px] w-[14px] rounded-full bg-[#2f1a10]" />
+                    <span className="quiz-radio-dot h-[14px] w-[14px] rounded-full bg-[#2f1a10]" />
                   ) : null}
                 </span>
               </button>
@@ -1110,18 +1229,18 @@ function StepCard({
                 }
                 className={
                   selected
-                    ? "flex min-h-14 items-center gap-3 rounded-2xl border border-[#2a1a13] bg-[#2a1a13] px-5 text-left text-sm font-bold text-white"
-                    : "flex min-h-14 items-center gap-3 rounded-2xl border border-[#eadfce] bg-white px-5 text-left text-sm font-semibold text-[#2a1a13]"
+                    ? "quiz-option quiz-option-selected flex min-h-14 items-center gap-3 rounded-2xl border border-[#2a1a13] bg-[#2a1a13] px-5 text-left text-sm font-bold text-white"
+                    : "quiz-option flex min-h-14 items-center gap-3 rounded-2xl border border-[#eadfce] bg-white px-5 text-left text-sm font-semibold text-[#2a1a13]"
                 }
               >
                 <span
                   className={
                     selected
-                      ? "grid h-5 w-5 place-items-center rounded border border-white text-[10px]"
-                      : "h-5 w-5 rounded border border-[#cdbfaf]"
+                      ? "quiz-checkmark grid h-5 w-5 place-items-center rounded border border-white text-[10px]"
+                      : "quiz-checkmark h-5 w-5 rounded border border-[#cdbfaf]"
                   }
                 >
-                  {selected ? "✓" : ""}
+                  {selected ? <span>✓</span> : ""}
                 </span>
                 {option.label}
               </button>
@@ -1216,6 +1335,12 @@ function StepCard({
     return (
       <QuestionFrame step={step} onBack={onBack}>
         <ResultPreview result={result} />
+        <LoginPanel
+          authUser={authUser}
+          saving={saving}
+          onLogin={onLogin}
+          onLogout={onLogout}
+        />
         <PrimaryButton
           disabled={saving}
           label={saving ? "Activating..." : "Simulate payment"}
@@ -1421,6 +1546,109 @@ function fallbackIcon(value: string): NonNullable<StepOption["icon"]> {
   if (value.includes("food") || value.includes("meal")) return "food";
   if (value.includes("low") || value.includes("no")) return "smile";
   return "heart";
+}
+
+function wait(durationMs: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
+
+function LoginPanel({
+  authUser,
+  saving,
+  onLogin,
+  onLogout,
+}: {
+  authUser: AuthUserState | null;
+  saving: boolean;
+  onLogin: (email: string, password: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  if (authUser) {
+    return (
+      <div className="mt-5 rounded-3xl border border-[#eadfce] bg-white p-5">
+        <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#99897a]">
+          Logged in
+        </p>
+        <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-black text-[#24140c]">{authUser.email}</p>
+            <p className="mt-1 text-sm font-semibold text-[#75685d]">
+              Subscription: {authUser.subscriptionStatus}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={onLogout}
+            className="rounded-full border border-[#e1d4c6] px-4 py-2 text-sm font-black text-[#2a1a13] transition hover:border-[#2a1a13] disabled:opacity-50"
+          >
+            Log out
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="mt-5 rounded-3xl border border-[#eadfce] bg-white p-5"
+      onSubmit={(event) => {
+        event.preventDefault();
+        return onLogin(email, password);
+      }}
+    >
+      <p className="text-xs font-bold uppercase tracking-[0.14em] text-[#99897a]">
+        Already subscribed?
+      </p>
+      <p className="mt-2 text-sm font-semibold leading-6 text-[#75685d]">
+        Log in to check existing entitlements from another platform and unlock the
+        full result automatically.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-xs font-black uppercase tracking-[0.12em] text-[#8a7b70]">
+            Email
+          </span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            className="mt-2 h-12 w-full rounded-2xl border border-[#eadfce] bg-[#fffdf7] px-4 text-sm font-bold outline-none focus:border-[#2a1a13]"
+            placeholder="you@example.com"
+            autoComplete="email"
+            required
+          />
+        </label>
+        <label className="block">
+          <span className="text-xs font-black uppercase tracking-[0.12em] text-[#8a7b70]">
+            Password
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            className="mt-2 h-12 w-full rounded-2xl border border-[#eadfce] bg-[#fffdf7] px-4 text-sm font-bold outline-none focus:border-[#2a1a13]"
+            placeholder="8+ characters"
+            autoComplete="current-password"
+            minLength={8}
+            required
+          />
+        </label>
+      </div>
+      <button
+        type="submit"
+        disabled={saving}
+        className="mt-4 h-12 w-full rounded-full border border-[#2a1a13] bg-white px-5 text-sm font-black text-[#2a1a13] transition hover:bg-[#2a1a13] hover:text-white disabled:opacity-50"
+      >
+        Log in and check subscription
+      </button>
+    </form>
+  );
 }
 
 function PrimaryButton({

@@ -3,34 +3,87 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model Session {
   id           String        @id @default(cuid())
   sessionId    String        @unique
+  userId       String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   assessment   Assessment?
   subscription Subscription?
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
 }
 
 model Subscription {
-  id        String             @id @default(cuid())
-  sessionId String             @unique
-  status    SubscriptionStatus @default(INACTIVE)
-  paidAt    DateTime?
-  createdAt DateTime           @default(now())
-  updatedAt DateTime           @updatedAt
+  id                     String             @id @default(cuid())
+  sessionId              String?            @unique
+  userId                 String?
+  sourcePlatform         String             @default("quiz")
+  externalSubscriptionId String?            @unique
+  status                 SubscriptionStatus @default(INACTIVE)
+  paidAt                 DateTime?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
 
-  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  session Session? @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  passwordSalt String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sessions      Session[]
+  authSessions  AuthSession[]
+  subscriptions Subscription[]
+  entitlements  ExternalEntitlement[]
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model ExternalEntitlement {
+  id                 String             @id @default(cuid())
+  email              String
+  userId             String?
+  sourcePlatform     String
+  externalCustomerId String?
+  status             SubscriptionStatus @default(INACTIVE)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([email, sourcePlatform])
+  @@index([userId, status])
 }
 
 model Assessment {
-  id             String         @id @default(cuid())
-  sessionId      String         @unique
+  id             String            @id @default(cuid())
+  sessionId      String            @unique
   gender         Gender?
   goal           Goal?
   age            Int?
@@ -38,26 +91,26 @@ model Assessment {
   weightKg       Float?
   targetWeightKg Float?
   activityLevel  ActivityLevel?
-  currentStep    Int            @default(0)
-  completed      Boolean        @default(false)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
+  currentStep    Int               @default(0)
+  completed      Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
   result         AssessmentResult?
 
   session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
 }
 
 model AssessmentResult {
-  id                  String     @id @default(cuid())
-  assessmentId        String     @unique
+  id                  String   @id @default(cuid())
+  assessmentId        String   @unique
   bmi                 Float
   bmiCategory         String
   recommendedCalories Int
   targetDate          DateTime
   summary             String
   predictionCurve     Json
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   assessment Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
 }

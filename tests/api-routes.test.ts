@@ -11,9 +11,61 @@ import type { SavedAssessmentResult } from "@/lib/assessment-service";
 
 const mockStoreState = vi.hoisted(() => ({
   sessions: new Set<string>(),
+  sessionUsers: new Map<string, string>(),
   progress: new Map<string, AssessmentProgress>(),
   results: new Map<string, SavedAssessmentResult>(),
   subscriptions: new Map<string, string>(),
+  userSubscriptions: new Map<string, string>(),
+  syncedEntitlements: new Map<string, { email: string; sourcePlatform: string; status: string }>(),
+  authUserId: null as string | null,
+}));
+
+vi.mock("next/headers", () => ({
+  cookies: async () => ({
+    get: () => (mockStoreState.authUserId ? { value: "test-token" } : undefined),
+    delete: vi.fn(),
+  }),
+}));
+
+vi.mock("@/lib/auth-service", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth-service")>();
+  return {
+    ...actual,
+    getAuthenticatedUser: vi.fn(async () =>
+      mockStoreState.authUserId
+        ? {
+            id: mockStoreState.authUserId,
+            email: "subscriber@example.com",
+            subscriptionStatus: "active",
+          }
+        : null,
+    ),
+  };
+});
+
+vi.mock("@/lib/prisma-auth-store", () => ({
+  prismaAuthStore: {},
+}));
+
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    externalEntitlement: {
+      async upsert(input: {
+        where: { email_sourcePlatform: { email: string; sourcePlatform: string } };
+        update: { status: string };
+        create: { email: string; sourcePlatform: string; status: string };
+      }) {
+        const key = `${input.where.email_sourcePlatform.email}:${input.where.email_sourcePlatform.sourcePlatform}`;
+        const entitlement = {
+          email: input.where.email_sourcePlatform.email,
+          sourcePlatform: input.where.email_sourcePlatform.sourcePlatform,
+          status: input.update.status ?? input.create.status,
+        };
+        mockStoreState.syncedEntitlements.set(key, entitlement);
+        return entitlement;
+      },
+    },
+  },
 }));
 
 vi.mock("@/lib/prisma-assessment-store", () => ({
@@ -73,12 +125,19 @@ vi.mock("@/lib/prisma-assessment-store", () => ({
     async getResult(sessionId: string) {
       return mockStoreState.results.get(sessionId) ?? null;
     },
-    async isSubscribed(sessionId: string) {
-      return mockStoreState.subscriptions.get(sessionId) === "active";
+    async isSubscribed(sessionId: string, userId?: string) {
+      return (
+        mockStoreState.subscriptions.get(sessionId) === "active" ||
+        Boolean(userId && mockStoreState.userSubscriptions.get(userId) === "active")
+      );
     },
     async activateSubscription(sessionId: string) {
       const paidAt = new Date().toISOString();
       mockStoreState.subscriptions.set(sessionId, "active");
+      const userId = mockStoreState.sessionUsers.get(sessionId);
+      if (userId) {
+        mockStoreState.userSubscriptions.set(userId, "active");
+      }
       return {
         sessionId,
         subscriptionStatus: "active" as const,
@@ -102,9 +161,13 @@ const validAssessment: SubmitAssessmentInput = {
 describe("API route handlers", () => {
   beforeEach(() => {
     mockStoreState.sessions.clear();
+    mockStoreState.sessionUsers.clear();
     mockStoreState.progress.clear();
     mockStoreState.results.clear();
     mockStoreState.subscriptions.clear();
+    mockStoreState.userSubscriptions.clear();
+    mockStoreState.syncedEntitlements.clear();
+    mockStoreState.authUserId = null;
   });
 
   it("rejects illegal progress and assessment payloads before persistence", async () => {
@@ -225,12 +288,74 @@ describe("API route handlers", () => {
     expect(paid.result.targetDate).toBeDefined();
     expect(paid.result.predictionCurve.length).toBeGreaterThan(0);
   });
+
+  it("unlocks protected result fields for a logged-in user with an existing subscription", async () => {
+    const { POST: submitPost } = await import("@/app/api/assessment/submit/route");
+    const { GET: resultGet } = await import("@/app/api/results/[sessionId]/route");
+
+    await submitPost(jsonRequest("/api/assessment/submit", validAssessment));
+
+    mockStoreState.authUserId = "user_existing_subscriber";
+    mockStoreState.userSubscriptions.set("user_existing_subscriber", "active");
+
+    const response = await resultGet(new Request("http://localhost/api/results"), {
+      params: Promise.resolve({ sessionId: validAssessment.sessionId }),
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.subscriptionStatus).toBe("active");
+    expect(body.paywall.required).toBe(false);
+    expect(body.result.recommendedCalories).toBeGreaterThan(1200);
+    expect(body.result.predictionCurve.length).toBeGreaterThan(0);
+  });
+
+  it("syncs external platform entitlements only with the configured secret", async () => {
+    const { POST } = await import("@/app/api/entitlements/sync/route");
+
+    process.env.ENTITLEMENT_SYNC_SECRET = "sync-secret";
+
+    const rejected = await POST(
+      jsonRequest("/api/entitlements/sync", {
+        email: "subscriber@example.com",
+        sourcePlatform: "stripe",
+        status: "ACTIVE",
+      }),
+    );
+    expect(rejected.status).toBe(401);
+
+    const accepted = await POST(
+      jsonRequest(
+        "/api/entitlements/sync",
+        {
+          email: "subscriber@example.com",
+          sourcePlatform: "stripe",
+          externalCustomerId: "cus_123",
+          status: "ACTIVE",
+        },
+        { authorization: "Bearer sync-secret" },
+      ),
+    );
+    const body = await accepted.json();
+
+    expect(accepted.status).toBe(200);
+    expect(body.entitlement).toMatchObject({
+      email: "subscriber@example.com",
+      sourcePlatform: "stripe",
+      status: "ACTIVE",
+    });
+    expect(mockStoreState.syncedEntitlements.size).toBe(1);
+  });
 });
 
-function jsonRequest(path: string, body: unknown) {
+function jsonRequest(
+  path: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
   return new Request(`http://localhost${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }

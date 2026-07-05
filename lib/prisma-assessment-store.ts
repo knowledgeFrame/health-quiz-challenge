@@ -101,23 +101,52 @@ export const prismaAssessmentStore: AssessmentStore = {
     return assessment?.result ? mapResult(assessment.result) : null;
   },
 
-  async isSubscribed(sessionId) {
-    const subscription = await prisma.subscription.findUnique({
+  async isSubscribed(sessionId, userId) {
+    const session = await prisma.session.findUnique({
       where: { sessionId },
+      select: { userId: true },
+    });
+    const effectiveUserId = userId ?? session?.userId;
+
+    const subscription = await prisma.subscription.findFirst({
+      where: {
+        status: "ACTIVE",
+        OR: [
+          { sessionId },
+          ...(effectiveUserId ? [{ userId: effectiveUserId }] : []),
+        ],
+      },
     });
 
-    return subscription?.status === "ACTIVE";
+    if (subscription) return true;
+
+    if (!effectiveUserId) return false;
+
+    const entitlement = await prisma.externalEntitlement.findFirst({
+      where: {
+        userId: effectiveUserId,
+        status: "ACTIVE",
+      },
+    });
+
+    return Boolean(entitlement);
   },
 
   async activateSubscription(sessionId) {
+    const session = await prisma.session.findUnique({
+      where: { sessionId },
+      select: { userId: true },
+    });
     const subscription = await prisma.subscription.upsert({
       where: { sessionId },
       update: {
+        userId: session?.userId,
         status: "ACTIVE",
         paidAt: new Date(),
       },
       create: {
         sessionId,
+        userId: session?.userId,
         status: "ACTIVE",
         paidAt: new Date(),
       },
