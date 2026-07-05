@@ -12,6 +12,7 @@ export const stepKeys = [
   "target",
   "activity",
 ] as const;
+export const maxProgressStep = 56;
 
 export const genderSchema = z.enum(["female", "male", "other"]);
 export const goalSchema = z.enum(["lose_weight", "maintain", "build_muscle"]);
@@ -33,7 +34,7 @@ export const sessionIdSchema = z
 export const progressPatchSchema = z
   .object({
     sessionId: sessionIdSchema,
-    step: z.number().int().min(0).max(stepKeys.length),
+    step: z.number().int().min(0).max(maxProgressStep),
     gender: genderSchema.optional(),
     goal: goalSchema.optional(),
     age: z.number().int().min(13).max(100).optional(),

@@ -725,6 +725,26 @@ const localStepKey = "healthQuizReferenceStep";
 const localSessionKey = "healthQuizSessionId";
 const localAnswersKey = "healthQuizReferenceAnswers";
 
+async function readApiJson<T extends { error?: string } = { error?: string }>(
+  response: Response,
+) {
+  const text = await response.text();
+
+  if (!text) return {} as T;
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    if (!response.ok) {
+      return {
+        error: response.statusText || "Server returned an invalid response",
+      } as T;
+    }
+
+    throw new Error("Server returned an invalid response");
+  }
+}
+
 export default function Home() {
   const [sessionId, setSessionId] = useState("");
   const [stepIndex, setStepIndex] = useState(0);
@@ -751,14 +771,16 @@ export default function Home() {
 
   const loadResult = useCallback(async (id: string) => {
     const response = await fetch(`/api/results/${encodeURIComponent(id)}`);
-    const data = await response.json();
+    const data = await readApiJson<ResultState & { error?: string }>(response);
     if (!response.ok) throw new Error(data.error || "Could not load result");
     setResult(data);
   }, []);
 
   const createSession = useCallback(async () => {
     const response = await fetch("/api/session", { method: "POST" });
-    const data = await response.json();
+    const data = await readApiJson<{ sessionId?: string; error?: string }>(
+      response,
+    );
     if (!response.ok) throw new Error(data.error || "Could not create session");
     return data.sessionId as string;
   }, []);
@@ -779,19 +801,25 @@ export default function Home() {
 
         const authResponse = await fetch("/api/auth/me");
         if (authResponse.ok) {
-          const authData = await authResponse.json();
+          const authData = await readApiJson<{
+            user?: AuthUserState | null;
+            error?: string;
+          }>(authResponse);
           setAuthUser(authData.user ?? null);
         }
 
         const progressResponse = await fetch(
           `/api/assessment/progress?sessionId=${encodeURIComponent(nextSessionId)}`,
         );
-        const progressData = await progressResponse.json();
+        const progressData = await readApiJson<{
+          progress?: FormState & { currentStep?: number; completed?: boolean };
+          error?: string;
+        }>(progressResponse);
         if (!progressResponse.ok) {
           throw new Error(progressData.error || "Could not restore progress");
         }
 
-        const progress = progressData.progress;
+        const progress = progressData.progress ?? {};
         setForm({
           gender: progress.gender,
           goal: progress.goal,
@@ -807,6 +835,11 @@ export default function Home() {
           setStepIndex(Math.min(storedStep, steps.length - 1));
         } else if (progress.completed) {
           setStepIndex(49);
+        } else if (
+          Number.isInteger(progress.currentStep) &&
+          progress.currentStep > 0
+        ) {
+          setStepIndex(Math.min(progress.currentStep, steps.length - 1));
         }
 
         const storedAnswers = window.localStorage.getItem(localAnswersKey);
@@ -873,19 +906,17 @@ export default function Home() {
     [stepIndex],
   );
 
-  async function persistFormPatch(patch: FormState, backendStep = 0) {
-    if (!Object.keys(patch).length) return;
-
+  async function persistStepProgress(stepNumber: number, patch: FormState = {}) {
     const response = await fetch("/api/assessment/progress", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sessionId,
-        step: backendStep,
+        step: stepNumber,
         ...patch,
       }),
     });
-    const data = await response.json();
+    const data = await readApiJson(response);
     if (!response.ok) throw new Error(data.error || "Could not save progress");
   }
 
@@ -911,7 +942,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-    const data = await response.json();
+    const data = await readApiJson(response);
     if (!response.ok) throw new Error(data.error || "Could not submit assessment");
     await loadResult(sessionId);
   }
@@ -927,9 +958,7 @@ export default function Home() {
       setForm(nextForm);
       window.localStorage.setItem(localAnswersKey, JSON.stringify(nextAnswers));
 
-      if (Object.keys(patch).length && "backendStep" in step) {
-        await persistFormPatch(patch, step.backendStep ?? 0);
-      }
+      await persistStepProgress(step.ref, patch);
 
       if (step.ref === 47 || step.kind === "result-preview") {
         await submitAssessment(nextForm);
@@ -954,7 +983,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
       });
-      const data = await response.json();
+      const data = await readApiJson(response);
       if (!response.ok) {
         throw new Error(data.error || "Could not activate subscription");
       }
@@ -976,11 +1005,14 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password, sessionId }),
       });
-      const data = await response.json();
+      const data = await readApiJson<{
+        user?: AuthUserState;
+        error?: string;
+      }>(response);
       if (!response.ok) {
         throw new Error(data.error || "Could not log in");
       }
-      setAuthUser(data.user);
+      setAuthUser(data.user ?? null);
       if (result) {
         await loadResult(sessionId);
       }
