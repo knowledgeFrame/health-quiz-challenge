@@ -1,24 +1,24 @@
 # Health Quiz Challenge
 
-A full-stack health assessment funnel built for the Arkon / 睿迄科技 3-day challenge. The app demonstrates a reference-inspired 56-step quiz funnel, step-by-step persistence, progress recovery, server-side health calculations, subscription-gated result access, a replayable `/api/pay` callback, and automated tests for the core flow.
+这是为 Arkon / 睿迄科技 3 天挑战实现的一套全栈健康评估问卷应用。项目包含参考页面风格的 56 步问卷流程、分步保存、进度恢复、服务端健康评估计算、会员结果解锁、可重复调用的 `/api/pay` 支付模拟回调，以及覆盖核心逻辑和关键接口流程的自动化测试。
 
-## Live Demo
+## 在线演示
 
-- Production URL: Vercel deployment connected to `https://github.com/knowledgeFrame/health-quiz-challenge`
-- GitHub: `https://github.com/knowledgeFrame/health-quiz-challenge`
-- Paid test `sessionId`: `daebdeef-3a88-480b-94da-a5bbaa5a5a95`
+- 生产环境：Vercel，连接仓库 `https://github.com/knowledgeFrame/health-quiz-challenge`
+- GitHub：`https://github.com/knowledgeFrame/health-quiz-challenge`
+- 付费测试 `sessionId`：`daebdeef-3a88-480b-94da-a5bbaa5a5a95`
 
-## Stack
+## 技术栈
 
 - Next.js App Router `16.2.10`
 - React `19`
 - TypeScript
 - Prisma + PostgreSQL / Supabase
-- Zod validation
-- Vitest
+- Zod 数据校验
+- Vitest 自动化测试
 - GitHub Actions CI
 
-## Local Setup
+## 本地运行
 
 ```bash
 npm install
@@ -28,22 +28,22 @@ npm run db:push
 npm run dev
 ```
 
-Required environment variables:
+必需环境变量：
 
 ```bash
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/postgres?sslmode=require"
 DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/postgres?sslmode=require"
 ```
 
-## API
+## API 说明
 
-### Create Session
+### 创建会话
 
 ```bash
 curl -X POST http://localhost:3000/api/session
 ```
 
-Response:
+返回示例：
 
 ```json
 {
@@ -51,7 +51,7 @@ Response:
 }
 ```
 
-### Save Step Progress
+### 保存分步进度
 
 ```bash
 curl -X PATCH http://localhost:3000/api/assessment/progress \
@@ -65,13 +65,13 @@ curl -X PATCH http://localhost:3000/api/assessment/progress \
   }'
 ```
 
-### Restore Progress
+### 恢复进度
 
 ```bash
 curl "http://localhost:3000/api/assessment/progress?sessionId=generated-session-id"
 ```
 
-### Submit Assessment
+### 提交健康评估
 
 ```bash
 curl -X POST http://localhost:3000/api/assessment/submit \
@@ -88,15 +88,15 @@ curl -X POST http://localhost:3000/api/assessment/submit \
   }'
 ```
 
-### Get Result
+### 获取结果
 
 ```bash
 curl "http://localhost:3000/api/results/generated-session-id"
 ```
 
-Before payment, protected fields such as `recommendedCalories`, `targetDate`, and `predictionCurve` are not returned.
+未支付前，接口不会返回受保护字段，例如 `recommendedCalories`、`targetDate` 和 `predictionCurve`。
 
-### Simulate Payment
+### 模拟支付
 
 ```bash
 curl -X POST http://localhost:3000/api/pay \
@@ -106,9 +106,9 @@ curl -X POST http://localhost:3000/api/pay \
   }'
 ```
 
-After this callback, the same result endpoint returns the complete plan.
+调用该回调后，同一个结果接口会从「脱敏结果」变为「完整计划」。
 
-## Database Schema
+## 数据库结构
 
 ```mermaid
 erDiagram
@@ -156,43 +156,43 @@ erDiagram
   }
 ```
 
-## Test Coverage
+## 测试覆盖
 
-Run all tests:
+一键运行所有测试：
 
 ```bash
 npm test
 ```
 
-Current automated coverage:
+当前自动化测试覆盖：
 
-- BMI, calorie, target-date algorithm unit tests.
-- Invalid and boundary body data: impossible height, weight, age, `NaN` / infinity values, contradictory target direction, and overly large target gaps.
-- Step save and progress recovery with repeated and out-of-order submissions.
-- Concurrent progress updates against the same session.
-- Subscription-gated result response: unpaid users receive only public fields.
-- `/api/pay` equivalent service flow: status changes to active and full result fields unlock.
-- Route-handler integration coverage for the critical HTTP flow: progress PATCH/GET, assessment submit, unpaid results, `/api/pay`, and paid results.
-- Zod payload validation for illegal values before persistence, including invalid session IDs, out-of-range steps, out-of-range metrics, string injection where numbers are required, invalid enums, and missing required submit fields.
+- 健康评估算法单元测试：BMI、推荐热量、目标日期。
+- 非法与边界身体数据：不可能的身高、体重、年龄，`NaN` / infinity，目标方向矛盾，以及目标体重差距过大。
+- 分步保存与进度恢复：重复提交、乱序提交、中断后恢复。
+- 同一会话的并发进度更新，确保不会创建重复会话。
+- 会员差异化返回：非会员只能拿到公开字段，不能拿到受保护字段。
+- `/api/pay` 等价服务流程：支付后状态变为 active，完整结果字段解锁。
+- Route handler 级接口集成测试：progress PATCH/GET、提交评估、未支付结果、`/api/pay`、支付后结果。
+- Zod 非法输入拦截：非法 sessionId、越界 step、越界身体指标、数字字段字符串注入、非法枚举、提交时缺失必填字段。
 
-Not covered yet:
+暂未覆盖：
 
-- Browser-level Playwright flow against the deployed Vercel URL. The current endpoint-level E2E test exercises real route handlers and responses without the extra browser/runtime flake.
-- Real database transaction race testing under load.
+- 部署到 Vercel 后的浏览器级 Playwright 流程。当前用 endpoint 级 E2E 测试覆盖真实 route handler 和响应结构，稳定性更适合本次交付。
+- 真实数据库在高并发压力下的事务竞争测试。当前并发测试覆盖服务层行为，数据库级压测属于下一层质量保障。
 
-Those are good next-layer tests, but the current suite locks the challenge-critical domain logic and access-control behavior.
+选择这些测试的原因：本项目的核心风险集中在健康评估计算是否可靠、非法输入是否能被拦截、问卷中断后能否恢复、以及非会员是否会泄露付费字段。因此测试优先锁定这些业务边界和访问控制行为。
 
-## Quality Checks
+## 质量检查
 
 ```bash
 npm test
 npm run build
 ```
 
-GitHub Actions runs install, Prisma client generation, tests, and build on pushes to `main` and pull requests.
+GitHub Actions 会在推送到 `main` 和发起 pull request 时自动执行依赖安装、Prisma Client 生成、测试和构建。
 
-## AI Collaboration Review
+## AI 协作说明
 
-AI was used as a senior pair-programming assistant to turn the challenge brief into an implementation plan, then to scaffold the schema, API boundaries, health algorithm, test matrix, and README. The most useful collaboration was in expanding the test cases beyond the happy path: invalid body metrics, contradictory target weights, out-of-order progress submission, duplicate submissions, and paid/unpaid response leakage.
+本项目使用 AI 作为结对编程助手，将挑战文档拆解为实现计划，并辅助完成数据库结构、API 边界、健康评估算法、测试矩阵和 README。AI 协作中最有价值的部分，是把测试从 happy path 扩展到非法身体数据、目标体重矛盾、乱序进度提交、重复提交、并发更新，以及付费 / 未付费结果字段泄露等风险点。
 
-One AI suggestion I rejected was treating the result endpoint as a static mock that always returned sample BMI and prediction data. That would have made the demo appear to work, but it would not prove persistence, server-side computation, or subscription gating. The final implementation stores submitted assessments, persists computed results, and returns different fields based on the database-backed subscription status.
+我没有采纳的一项 AI 建议是：把结果接口做成永远返回固定 BMI 和预测曲线的静态 mock。这样虽然演示看起来可用，但无法证明持久化、服务端计算和会员鉴权逻辑真的成立。最终实现会保存用户提交的评估，持久化计算结果，并根据数据库中的订阅状态返回不同字段。
