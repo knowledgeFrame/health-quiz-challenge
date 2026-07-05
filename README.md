@@ -1,6 +1,6 @@
 # Health Quiz Challenge
 
-A full-stack health assessment funnel built for the Arkon / 睿迄科技 3-day challenge. The app demonstrates step-by-step persistence, progress recovery, server-side health calculations, subscription-gated result access, a replayable `/api/pay` callback, and automated tests for the core flow.
+A full-stack health assessment funnel built for the Arkon / 睿迄科技 3-day challenge. The app demonstrates a reference-inspired 56-step quiz funnel, step-by-step persistence, progress recovery, server-side health calculations, subscription-gated result access, a replayable `/api/pay` callback, and automated tests for the core flow.
 
 ## Live Demo
 
