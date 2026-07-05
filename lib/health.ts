@@ -62,6 +62,9 @@ export function calculateTargetDate(
   assertFiniteRange(targetWeightKg, 35, 250, "targetWeightKg");
 
   const difference = targetWeightKg - currentWeightKg;
+  if (Math.abs(difference) > 70) {
+    throw new Error("targetWeightKg is too far from current weight");
+  }
   if (goal === "maintain") {
     return addWeeks(from, 4);
   }

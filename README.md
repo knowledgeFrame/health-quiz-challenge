@@ -167,16 +167,17 @@ npm test
 Current automated coverage:
 
 - BMI, calorie, target-date algorithm unit tests.
-- Invalid and boundary body data: impossible height, weight, age, and target direction.
+- Invalid and boundary body data: impossible height, weight, age, `NaN` / infinity values, contradictory target direction, and overly large target gaps.
 - Step save and progress recovery with repeated and out-of-order submissions.
 - Concurrent progress updates against the same session.
 - Subscription-gated result response: unpaid users receive only public fields.
 - `/api/pay` equivalent service flow: status changes to active and full result fields unlock.
-- Zod payload validation for illegal values before persistence.
+- Route-handler integration coverage for the critical HTTP flow: progress PATCH/GET, assessment submit, unpaid results, `/api/pay`, and paid results.
+- Zod payload validation for illegal values before persistence, including invalid session IDs, out-of-range steps, out-of-range metrics, string injection where numbers are required, invalid enums, and missing required submit fields.
 
 Not covered yet:
 
-- Browser-level Playwright flow against the deployed Vercel URL.
+- Browser-level Playwright flow against the deployed Vercel URL. The current endpoint-level E2E test exercises real route handlers and responses without the extra browser/runtime flake.
 - Real database transaction race testing under load.
 
 Those are good next-layer tests, but the current suite locks the challenge-critical domain logic and access-control behavior.

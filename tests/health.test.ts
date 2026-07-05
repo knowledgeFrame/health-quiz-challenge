@@ -30,12 +30,31 @@ describe("health assessment algorithm", () => {
   });
 
   it("rejects missing or impossible body numbers at the algorithm boundary", () => {
-    expect(() => calculateBmi(0, 70)).toThrow("heightCm");
-    expect(() => calculateBmi(170, -1)).toThrow("weightKg");
+    const invalidBmiInputs = [
+      { heightCm: 0, weightKg: 70, field: "heightCm" },
+      { heightCm: 119, weightKg: 70, field: "heightCm" },
+      { heightCm: 231, weightKg: 70, field: "heightCm" },
+      { heightCm: Number.NaN, weightKg: 70, field: "heightCm" },
+      { heightCm: 170, weightKg: -1, field: "weightKg" },
+      { heightCm: 170, weightKg: 34, field: "weightKg" },
+      { heightCm: 170, weightKg: 251, field: "weightKg" },
+      { heightCm: 170, weightKg: Number.POSITIVE_INFINITY, field: "weightKg" },
+    ];
+
+    for (const input of invalidBmiInputs) {
+      expect(() => calculateBmi(input.heightCm, input.weightKg)).toThrow(input.field);
+    }
+
     expect(() =>
       calculateDailyCalories({
         ...validAssessment,
         age: 4,
+      }),
+    ).toThrow("age");
+    expect(() =>
+      calculateDailyCalories({
+        ...validAssessment,
+        age: 101,
       }),
     ).toThrow("age");
   });
@@ -46,6 +65,9 @@ describe("health assessment algorithm", () => {
     );
     expect(() => calculateTargetDate(70, 60, "build_muscle")).toThrow(
       "higher than current weight",
+    );
+    expect(() => calculateTargetDate(70, 160, "build_muscle")).toThrow(
+      "targetWeightKg",
     );
   });
 });
