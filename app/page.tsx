@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 
 type Gender = "female" | "male" | "other";
 type Goal = "lose_weight" | "maintain" | "build_muscle";
@@ -71,6 +77,24 @@ export default function Home() {
     [step],
   );
 
+  const loadResult = useCallback(async (id: string) => {
+    const response = await fetch(`/api/results/${encodeURIComponent(id)}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load result");
+    }
+
+    setResult(data);
+  }, []);
+
+  const createSession = useCallback(async () => {
+    const response = await fetch("/api/session", { method: "POST" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not create session");
+    return data.sessionId as string;
+  }, []);
+
   useEffect(() => {
     async function boot() {
       setLoading(true);
@@ -116,14 +140,7 @@ export default function Home() {
     }
 
     boot();
-  }, []);
-
-  async function createSession() {
-    const response = await fetch("/api/session", { method: "POST" });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Could not create session");
-    return data.sessionId as string;
-  }
+  }, [createSession, loadResult]);
 
   async function saveStep(nextPatch: FormState, nextStep: number) {
     setSaving(true);
@@ -176,17 +193,6 @@ export default function Home() {
     } finally {
       setSaving(false);
     }
-  }
-
-  async function loadResult(id = sessionId) {
-    const response = await fetch(`/api/results/${encodeURIComponent(id)}`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Could not load result");
-    }
-
-    setResult(data);
   }
 
   async function pay() {

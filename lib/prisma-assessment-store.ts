@@ -14,7 +14,6 @@ import {
   type AssessmentProgress,
   type AssessmentResult,
   type ProgressPatchInput,
-  type SubmitAssessmentInput,
 } from "./assessment-types";
 import { prisma } from "./prisma";
 
