@@ -6,7 +6,7 @@ A full-stack health assessment funnel built for the Arkon / 睿迄科技 3-day c
 
 - Production URL: Vercel deployment connected to `https://github.com/knowledgeFrame/health-quiz-challenge`
 - GitHub: `https://github.com/knowledgeFrame/health-quiz-challenge`
-- Paid test `sessionId`: `8f37862e-36bf-4dbc-af86-117a1651effa`
+- Paid test `sessionId`: `daebdeef-3a88-480b-94da-a5bbaa5a5a95`
 
 ## Stack
 
