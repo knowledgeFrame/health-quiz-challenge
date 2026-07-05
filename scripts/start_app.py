@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import signal
 import socket
 import subprocess
 import time
@@ -29,6 +30,8 @@ def start_local_app(
     if not package_json.is_file():
         raise FileNotFoundError(f"package.json not found under {root}")
 
+    _stop_existing_server(port)
+
     env = os.environ.copy()
     env["PORT"] = str(port)
 
@@ -44,6 +47,57 @@ def start_local_app(
         _wait_for_server(f"http://{host}:{port}", process, timeout=timeout)
 
     return process
+
+
+def _stop_existing_server(port: int, *, timeout: float = 5.0) -> None:
+    pids = _listening_pids(port)
+    if not pids:
+        return
+
+    current_pid = os.getpid()
+    pids = [pid for pid in pids if pid != current_pid]
+    if not pids:
+        return
+
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remaining = [pid for pid in _listening_pids(port) if pid in pids]
+        if not remaining:
+            return
+        time.sleep(0.2)
+
+    for pid in remaining:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def _listening_pids(port: int) -> list[int]:
+    try:
+        result = subprocess.run(
+            ["lsof", "-tiTCP:{port}".format(port=port), "-sTCP:LISTEN"],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+    except FileNotFoundError:
+        return []
+
+    pids: list[int] = []
+    for line in result.stdout.splitlines():
+        try:
+            pids.append(int(line.strip()))
+        except ValueError:
+            pass
+    return pids
 
 
 def _wait_for_server(url: str, process: subprocess.Popen[str], *, timeout: float) -> None:

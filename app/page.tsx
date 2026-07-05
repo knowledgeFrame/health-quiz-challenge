@@ -835,11 +835,15 @@ export default function Home() {
           setStepIndex(Math.min(storedStep, steps.length - 1));
         } else if (progress.completed) {
           setStepIndex(49);
-        } else if (
-          Number.isInteger(progress.currentStep) &&
-          progress.currentStep > 0
-        ) {
-          setStepIndex(Math.min(progress.currentStep, steps.length - 1));
+        } else {
+          const restoredStep = progress.currentStep;
+          if (
+            typeof restoredStep === "number" &&
+            Number.isInteger(restoredStep) &&
+            restoredStep > 0
+          ) {
+            setStepIndex(Math.min(restoredStep, steps.length - 1));
+          }
         }
 
         const storedAnswers = window.localStorage.getItem(localAnswersKey);
