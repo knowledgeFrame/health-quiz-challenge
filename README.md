@@ -1,6 +1,6 @@
 # Health Quiz Challenge
 
-这是为 Arkon / 睿迄科技 3 天挑战实现的一套全栈健康评估问卷应用。项目包含参考页面风格的 56 步问卷流程、分步保存、进度恢复、服务端健康评估计算、会员结果解锁、可重复调用的 `/api/pay` 支付模拟回调，以及覆盖核心逻辑和关键接口流程的自动化测试。
+这是为 Arkon / 睿迄科技 3 天挑战实现的一套全栈健康评估问卷应用。项目包含参考页面风格的 56 步问卷流程、分步保存、进度恢复、服务端健康评估计算、会员结果解锁、真实邮箱密码登录、外部平台订阅权益同步、可重复调用的 `/api/pay` 支付模拟回调，以及覆盖核心逻辑和关键接口流程的自动化测试。
 
 ## 在线演示
 
@@ -33,6 +33,7 @@ npm run dev
 ```bash
 DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/postgres?sslmode=require"
 DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/postgres?sslmode=require"
+ENTITLEMENT_SYNC_SECRET="replace-with-a-long-random-secret"
 ```
 
 ## API 说明
@@ -108,17 +109,77 @@ curl -X POST http://localhost:3000/api/pay \
 
 调用该回调后，同一个结果接口会从「脱敏结果」变为「完整计划」。
 
+### 登录并识别已有订阅
+
+登录接口使用邮箱 + 密码。首次使用某个邮箱登录时会创建真实用户账号；再次登录会校验密码。登录成功后，服务端写入 HttpOnly Cookie，并把当前匿名 `sessionId` 绑定到该用户。
+
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "subscriber@example.com",
+    "password": "password123",
+    "sessionId": "generated-session-id"
+  }'
+```
+
+登录后可查询当前用户：
+
+```bash
+curl http://localhost:3000/api/auth/me
+```
+
+退出登录：
+
+```bash
+curl -X POST http://localhost:3000/api/auth/logout
+```
+
+登录的意义是做「权益识别」：如果用户已经在 Stripe、App Store、Google Play 或其他平台订阅过，外部平台先同步一条 ACTIVE 权益到本系统；用户登录后，系统会把该权益绑定到用户，并让结果页直接返回完整计划。
+
+### 同步外部平台订阅权益
+
+该接口模拟生产环境里的 Stripe / App Store / Google Play / CRM webhook。调用方必须携带 `ENTITLEMENT_SYNC_SECRET` 对应的 Bearer token。
+
+```bash
+curl -X POST http://localhost:3000/api/entitlements/sync \
+  -H "Authorization: Bearer replace-with-a-long-random-secret" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "subscriber@example.com",
+    "sourcePlatform": "stripe",
+    "externalCustomerId": "cus_123",
+    "status": "ACTIVE"
+  }'
+```
+
+后续 `subscriber@example.com` 登录后，即使当前问卷 session 没有走 `/api/pay`，`/api/results/[sessionId]` 也会因为用户已有 ACTIVE 权益而返回完整结果。
+
 ## 数据库结构
 
 ```mermaid
 erDiagram
+  User ||--o{ Session : owns
+  User ||--o{ AuthSession : signs_in
+  User ||--o{ Subscription : owns
+  User ||--o{ ExternalEntitlement : syncs
   Session ||--o| Assessment : owns
   Session ||--o| Subscription : owns
   Assessment ||--o| AssessmentResult : produces
 
+  User {
+    string id PK
+    string email UK
+    string passwordHash
+    string passwordSalt
+    datetime createdAt
+    datetime updatedAt
+  }
+
   Session {
     string id PK
     string sessionId UK
+    string userId
     datetime createdAt
     datetime updatedAt
   }
@@ -150,9 +211,28 @@ erDiagram
 
   Subscription {
     string id PK
-    string sessionId UK
+    string sessionId
+    string userId
+    string sourcePlatform
+    string externalSubscriptionId
     enum status
     datetime paidAt
+  }
+
+  AuthSession {
+    string id PK
+    string tokenHash UK
+    string userId
+    datetime expiresAt
+  }
+
+  ExternalEntitlement {
+    string id PK
+    string email
+    string userId
+    string sourcePlatform
+    string externalCustomerId
+    enum status
   }
 ```
 
@@ -172,7 +252,8 @@ npm test
 - 同一会话的并发进度更新，确保不会创建重复会话。
 - 会员差异化返回：非会员只能拿到公开字段，不能拿到受保护字段。
 - `/api/pay` 等价服务流程：支付后状态变为 active，完整结果字段解锁。
-- Route handler 级接口集成测试：progress PATCH/GET、提交评估、未支付结果、`/api/pay`、支付后结果。
+- 真实登录服务测试：密码哈希、错误密码拒绝、HttpOnly 登录态对应的服务端 session、外部权益同步后自动识别 active 订阅。
+- Route handler 级接口集成测试：progress PATCH/GET、提交评估、未支付结果、`/api/pay`、支付后结果、登录用户已有订阅直接解锁、外部权益 webhook 鉴权。
 - Zod 非法输入拦截：非法 sessionId、越界 step、越界身体指标、数字字段字符串注入、非法枚举、提交时缺失必填字段。
 
 暂未覆盖：
@@ -180,7 +261,7 @@ npm test
 - 部署到 Vercel 后的浏览器级 Playwright 流程。当前用 endpoint 级 E2E 测试覆盖真实 route handler 和响应结构，稳定性更适合本次交付。
 - 真实数据库在高并发压力下的事务竞争测试。当前并发测试覆盖服务层行为，数据库级压测属于下一层质量保障。
 
-选择这些测试的原因：本项目的核心风险集中在健康评估计算是否可靠、非法输入是否能被拦截、问卷中断后能否恢复、以及非会员是否会泄露付费字段。因此测试优先锁定这些业务边界和访问控制行为。
+选择这些测试的原因：本项目的核心风险集中在健康评估计算是否可靠、非法输入是否能被拦截、问卷中断后能否恢复、非会员是否会泄露付费字段，以及登录用户已有订阅时能否正确绕过支付墙。因此测试优先锁定这些业务边界、访问控制行为和权益识别链路。
 
 ## 质量检查
 

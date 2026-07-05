@@ -4,6 +4,7 @@ import { loginWithPassword, authCookieName } from "@/lib/auth-service";
 import { loginSchema } from "@/lib/auth-types";
 import { prismaAuthStore } from "@/lib/prisma-auth-store";
 
+export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const parsed = loginSchema.safeParse(body);
 
